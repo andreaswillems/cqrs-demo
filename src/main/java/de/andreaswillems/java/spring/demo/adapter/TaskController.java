@@ -1,10 +1,12 @@
 package de.andreaswillems.java.spring.demo.adapter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.andreaswillems.java.spring.demo.core.read.TaskQueryService;
 import de.andreaswillems.java.spring.demo.core.read.model.ReadModelTask;
 import de.andreaswillems.java.spring.demo.core.write.TaskCommandHandler;
+import de.andreaswillems.java.spring.demo.core.write.commands.CompleteTaskCommand;
 import de.andreaswillems.java.spring.demo.core.write.commands.CreateTaskCommand;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -51,10 +53,18 @@ public class TaskController {
     }
 
     @GetMapping(path = "/{taskId}")
-    public ResponseEntity<String> getSingleTask(@PathVariable(name = "taskId") UUID taskId) throws JsonProcessingException {
+    public ResponseEntity<JsonNode> getSingleTask(@PathVariable UUID taskId) throws JsonProcessingException {
         ReadModelTask task = taskQueryService.getTaskById(taskId);
         ObjectMapper objectMapper = new ObjectMapper();
         String json = objectMapper.writeValueAsString(task);
-        return ResponseEntity.ok().body(json);
+        JsonNode jsonNode = objectMapper.readTree(json);
+        return ResponseEntity.ok().body(jsonNode);
+    }
+
+    @PutMapping(path = "/{taskId}/complete")
+    public ResponseEntity<String> completeTask(@PathVariable UUID taskId) {
+        CompleteTaskCommand command = new CompleteTaskCommand(taskId);
+        taskCommandHandler.completeTask(command);
+        return ResponseEntity.noContent().build();
     }
 }

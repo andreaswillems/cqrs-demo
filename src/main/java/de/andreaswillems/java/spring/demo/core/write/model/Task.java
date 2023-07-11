@@ -8,9 +8,13 @@ public class Task {
     TaskStatus status;
 
     public Task(String title) {
-        this.id = UUID.randomUUID();
+        this(UUID.randomUUID(), title, TaskStatus.TODO);
+    }
+
+    public Task(UUID id, String title, TaskStatus status) {
+        this.id = id;
         this.title = title;
-        this.status = TaskStatus.TODO;
+        this.status = status;
     }
 
     public UUID getId() {

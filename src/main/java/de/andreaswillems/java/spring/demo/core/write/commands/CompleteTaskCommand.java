@@ -1,4 +1,5 @@
 package de.andreaswillems.java.spring.demo.core.write.commands;
 
-public class CompleteTaskCommand {
-}
+import java.util.UUID;
+
+public record CompleteTaskCommand(UUID taskId) {}

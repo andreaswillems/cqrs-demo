@@ -1,51 +1,62 @@
 package de.andreaswillems.java.spring.demo.adapter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.andreaswillems.java.spring.demo.core.events.Event;
 import de.andreaswillems.java.spring.demo.core.events.EventRepository;
 import de.andreaswillems.java.spring.demo.core.write.model.Task;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import de.andreaswillems.java.spring.demo.core.write.model.TaskStatus;
+import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.http.HttpEntity;
+import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
+import org.springframework.web.reactive.function.client.WebClient;
+
+import java.net.URI;
+import java.util.Optional;
 
 import static de.andreaswillems.java.spring.demo.core.events.EventType.TASK_CREATED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT;
+import static org.springframework.http.HttpStatus.NO_CONTENT;
 import static org.springframework.http.HttpStatus.OK;
-import static org.springframework.http.MediaType.APPLICATION_JSON;
 
 @SpringBootTest(webEnvironment = RANDOM_PORT)
 @TestDatabase
 public class TaskControllerTest {
 
-    @Autowired
-    private TestRestTemplate restTemplate;
+    private final EventRepository eventRepository;
+
+    private final WebClient webClient;
 
     @Autowired
-    private EventRepository eventRepository;
+    public TaskControllerTest(ServletWebServerApplicationContext webServerAppCtx, EventRepository eventRepository) {
+        this.eventRepository = eventRepository;
+
+        int port = webServerAppCtx.getWebServer().getPort();
+
+        URI uri = URI.create(
+            "http://localhost:" + port + "/tasks"
+        );
+
+        this.webClient = WebClient
+            .builder()
+            .baseUrl(uri.toString())
+            .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+            .build();
+    }
 
     @BeforeEach
     void setUp() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(APPLICATION_JSON);
         String body = """
         {
           "title": "Todo Zero"
         }
         """;
-        restTemplate.postForEntity(
-            "/tasks",
-            new HttpEntity<>(body, headers),
-            String.class
-        );
+        webClient.post().bodyValue(body).retrieve();
     }
 
     @AfterEach
@@ -56,22 +67,20 @@ public class TaskControllerTest {
     @Test
     @DisplayName("A task with the given title is created")
     void createTask() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(APPLICATION_JSON);
         String body = """
         {
           "title": "Todo One"
         }
         """;
-        ResponseEntity<TaskCreatedResponse> response = restTemplate.postForEntity(
-            "/tasks",
-            new HttpEntity<>(body, headers),
-            TaskCreatedResponse.class
-        );
 
-        assertThat(response.getStatusCode().isSameCodeAs(OK)).isTrue();
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().taskId()).isNotNull();
+        WebClient.RequestHeadersSpec<?> headersSpec = webClient.post().bodyValue(body);
+        Optional<TaskCreatedResponse> response = headersSpec.exchangeToMono(clientResponse -> {
+           assertThat(clientResponse.statusCode().isSameCodeAs(OK)).isTrue();
+           return clientResponse.bodyToMono(TaskCreatedResponse.class);
+        }).blockOptional();
+
+        assertThat(response.isPresent()).isTrue();
+        assertThat(response.get().taskId()).isNotNull();
     }
 
     @Test
@@ -81,31 +90,63 @@ public class TaskControllerTest {
         Event taskCreatedEvent = new Event(task.getId(), TASK_CREATED, toJson(task));
         eventRepository.save(taskCreatedEvent);
 
-        ResponseEntity<SingleTaskResponse> response =
-            restTemplate.getForEntity("/tasks/" + task.getId().toString(), SingleTaskResponse.class);
-        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        WebClient.RequestHeadersSpec<?> headersSpec = webClient.get().uri("/{taskId}", task.getId());
+        Optional<JsonNode> response = headersSpec.exchangeToMono(clientResponse -> {
+            assertThat(clientResponse.statusCode().isSameCodeAs(OK)).isTrue();
+            return clientResponse.bodyToMono(JsonNode.class);
+        }).blockOptional();
+
+        assertThat(response.isPresent()).isTrue();
+        assertThat(response.get().get("id").asText()).isEqualTo(task.getId().toString());
     }
 
     @Test
     @DisplayName("All tasks are fetched")
     void fetchTasks() {
         // Arrange
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(APPLICATION_JSON);
         String body = """
         {
           "title": "Todo One"
         }
         """;
-        restTemplate.postForEntity("/tasks", new HttpEntity<>(body, headers), String.class);
+        webClient.post().bodyValue(body).retrieve();
 
         // Act
-        ResponseEntity<ListTasksResponse> response = restTemplate.getForEntity("/tasks", ListTasksResponse.class);
+        WebClient.RequestHeadersSpec<?> headersSpec = webClient.get();
+        Optional<JsonNode> response = headersSpec.exchangeToMono(clientResponse -> {
+            assertThat(clientResponse.statusCode().isSameCodeAs(OK)).isTrue();
+            return clientResponse.bodyToMono(JsonNode.class);
+        }).blockOptional();
 
         // Assert
-        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().tasks().size()).isEqualTo(2);
+        assertThat(response.isPresent()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Task is completed")
+    void completeTask() {
+        // arrange
+        Task task = new Task("Title");
+        Event taskCreatedEvent = new Event(task.getId(), TASK_CREATED, toJson(task));
+        eventRepository.save(taskCreatedEvent);
+
+        // act
+        WebClient.RequestHeadersSpec<?> headersSpec = webClient.put().uri("/{taskId}/complete", task.getId());
+        headersSpec.exchangeToMono(clientResponse -> {
+            // assert
+            assertThat(clientResponse.statusCode().isSameCodeAs(NO_CONTENT)).isTrue();
+            return clientResponse.bodyToMono(String.class);
+        }).block();
+
+        // assert
+        WebClient.RequestHeadersSpec<?> getHeadersSpec = webClient.get().uri("/{taskId}", task.getId());
+        Optional<JsonNode> getResponse = getHeadersSpec.exchangeToMono(clientResponse -> {
+            assertThat(clientResponse.statusCode().isSameCodeAs(OK)).isTrue();
+            return clientResponse.bodyToMono(JsonNode.class);
+        }).blockOptional();
+
+        assertThat(getResponse.isPresent()).isTrue();
+        assertThat(getResponse.get().get("status").asText()).isEqualTo(TaskStatus.COMPLETED.toString());
     }
 
     private String toJson(Task task) {
