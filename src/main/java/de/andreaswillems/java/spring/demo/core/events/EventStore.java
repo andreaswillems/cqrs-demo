@@ -19,12 +19,12 @@ public class EventStore {
         this.repository = repository;
     }
 
-    public BaseEvent add(BaseEvent event) {
+    public Event add(Event event) {
         logger.info("Persisting event of type {}", event.eventType);
         return repository.save(event);
     }
 
-    public List<BaseEvent> getEvents() {
+    public List<Event> getEvents() {
         logger.debug("Fetching events");
         return StreamSupport.stream(repository.findAll().spliterator(), false).collect(Collectors.toList());
     }

@@ -1,6 +1,6 @@
 package de.andreaswillems.java.spring.demo.core.read;
 
-import de.andreaswillems.java.spring.demo.core.events.BaseEvent;
+import de.andreaswillems.java.spring.demo.core.events.Event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,8 +22,8 @@ public class TaskEventSubscriber {
 
     @Async
     @EventListener
-    public void onApplicationEvent(BaseEvent event) {
+    public void onApplicationEvent(Event event) {
         logger.info("Received event of type {}", event.eventType);
-        taskEventHandler.handleEvent(event);
+        // taskEventHandler.handleEvent(event);
     }
 }

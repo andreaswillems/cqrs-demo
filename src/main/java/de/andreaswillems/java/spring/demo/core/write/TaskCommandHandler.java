@@ -2,15 +2,18 @@ package de.andreaswillems.java.spring.demo.core.write;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.andreaswillems.java.spring.demo.core.events.BaseEvent;
+import de.andreaswillems.java.spring.demo.core.events.Event;
 import de.andreaswillems.java.spring.demo.core.events.EventStore;
-import de.andreaswillems.java.spring.demo.core.events.TaskCreatedEvent;
 import de.andreaswillems.java.spring.demo.core.write.commands.*;
 import de.andreaswillems.java.spring.demo.core.write.model.Task;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
+import java.util.UUID;
+
+import static de.andreaswillems.java.spring.demo.core.events.EventType.TASK_CREATED;
 
 @Component
 public class TaskCommandHandler {
@@ -26,14 +29,16 @@ public class TaskCommandHandler {
         this.taskEventPublisher = taskEventPublisher;
     }
 
-    public void createTask(CreateTaskCommand command) {
+    public UUID createTask(CreateTaskCommand command) {
         logger.debug("Handling command of type {}", command.getClass().getSimpleName());
         Task task = new Task(command.getTaskTitle());
-        BaseEvent taskCreatedEvent = new TaskCreatedEvent(task.getId(), toJson(task));
+        Event taskCreatedEvent = new Event(task.getId(), TASK_CREATED, toJson(task));
         // persist taskCreatedEvent to database
-        BaseEvent stored = eventStore.add(taskCreatedEvent);
+        Event stored = eventStore.add(taskCreatedEvent);
         // publish event for updates on the query side
         taskEventPublisher.publishEvent(stored);
+
+        return task.getId();
     }
 
     public void updateTaskTitle(UpdateTaskTitleCommand command) {
